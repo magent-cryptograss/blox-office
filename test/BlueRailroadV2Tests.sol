@@ -252,4 +252,47 @@ contract BlueRailroadV2Tests is Test {
     function test_v1_contract_address_stored() public view {
         assertEq(address(blueRailroad.v1Contract()), address(v1Contract));
     }
+
+    function test_new_mints_after_migration_dont_collide() public {
+        // Migrate V1 tokens 0 and 2 (skipping 1)
+        v1Contract.mint(alice, 0, PUSHUPS, 20240115);
+        v1Contract.mint(bob, 2, PUSHUPS, 20240117);
+
+        vm.prank(alice);
+        v1Contract.approve(address(blueRailroad), 0);
+        vm.prank(alice);
+        blueRailroad.migrateFromV1(0, SQUATS, BLOCK_JAN_2024, "ipfs://Qm0");
+
+        vm.prank(bob);
+        v1Contract.approve(address(blueRailroad), 2);
+        vm.prank(bob);
+        blueRailroad.migrateFromV1(2, SQUATS, BLOCK_JAN_2024, "ipfs://Qm2");
+
+        // Now mint a new token - should get ID 3 (after highest migrated ID)
+        blueRailroad.issueTony(alice, ARMY_CRAWLS, BLOCK_JAN_2026, "ipfs://QmNew");
+
+        // Verify token IDs: 0 (migrated), 2 (migrated), 3 (new)
+        assertEq(blueRailroad.ownerOf(0), alice);
+        assertEq(blueRailroad.ownerOf(2), bob);
+        assertEq(blueRailroad.ownerOf(3), alice);
+        assertEq(blueRailroad.totalSupply(), 3);
+    }
+
+    function test_migration_preserves_token_id() public {
+        // Migrate token ID 4 specifically
+        v1Contract.mint(alice, 4, PUSHUPS, 20240115);
+
+        vm.prank(alice);
+        v1Contract.approve(address(blueRailroad), 4);
+        vm.prank(alice);
+        blueRailroad.migrateFromV1(4, SQUATS, BLOCK_JAN_2024, "ipfs://Qm4");
+
+        // V2 token should have same ID as V1 token
+        assertEq(blueRailroad.ownerOf(4), alice);
+        assertTrue(blueRailroad.v1TokenMigrated(4));
+
+        // Next new mint should be ID 5
+        blueRailroad.issueTony(bob, PUSHUPS, BLOCK_JAN_2026, "ipfs://QmNext");
+        assertEq(blueRailroad.ownerOf(5), bob);
+    }
 }
