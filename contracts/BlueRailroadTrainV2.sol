@@ -42,6 +42,9 @@ contract BlueRailroadTrainV2 is ERC721, ERC721Enumerable, ERC721Burnable, Ownabl
     /// @notice Maps token ID to Ethereum mainnet blockheight when exercise was performed
     mapping(uint32 => uint256) public tokenIdToBlockheight;
 
+    /// @notice Maps token ID to IPFS video content hash (CIDv0 digest, 32 bytes)
+    mapping(uint32 => bytes32) public tokenIdToVideoHash;
+
     /// @notice Tracks which V1 token IDs have been migrated (prevents double-migration)
     /// @dev Only 5 V1 tokens exist (IDs 0-4), so uint32 is plenty
     mapping(uint32 => bool) public v1TokenMigrated;
@@ -69,12 +72,13 @@ contract BlueRailroadTrainV2 is ERC721, ERC721Enumerable, ERC721Burnable, Ownabl
      * @notice Migrate a token from V1 to V2 (trustless)
      * @dev Caller must own the V1 token and have approved this contract to transfer it.
      *      The V1 token is sent to the burn address, and a V2 token with the SAME ID is minted.
-     *      Caller provides corrected metadata (songId, blockheight) since V1 data may be wrong.
+     *      Caller provides corrected metadata (songId, blockheight, videoHash) since V1 data may be wrong.
      * @param v1TokenId The token ID on the V1 contract to migrate (V2 will use same ID)
      * @param songId Corrected Manzanita track number (5=Pushups, 7=Squats, 8=Army Crawls)
      * @param blockheight Ethereum mainnet blockheight when the exercise was performed
+     * @param videoHash IPFS CIDv0 digest (32 bytes) of the exercise video
      */
-    function migrateFromV1(uint32 v1TokenId, uint32 songId, uint256 blockheight) external {
+    function migrateFromV1(uint32 v1TokenId, uint32 songId, uint256 blockheight, bytes32 videoHash) external {
         require(!v1TokenMigrated[v1TokenId], "Token already migrated");
         require(v1Contract.ownerOf(v1TokenId) == msg.sender, "Caller does not own V1 token");
 
@@ -87,6 +91,7 @@ contract BlueRailroadTrainV2 is ERC721, ERC721Enumerable, ERC721Burnable, Ownabl
         // Mint V2 token with same ID as V1 token
         tokenIdToSongId[v1TokenId] = songId;
         tokenIdToBlockheight[v1TokenId] = blockheight;
+        tokenIdToVideoHash[v1TokenId] = videoHash;
         _safeMint(msg.sender, v1TokenId);
 
         // Update _nextTokenId if needed (so new mints don't collide)
@@ -102,11 +107,13 @@ contract BlueRailroadTrainV2 is ERC721, ERC721Enumerable, ERC721Burnable, Ownabl
      * @param recipient Address to receive the token
      * @param songId Manzanita track number (5=Pushups, 7=Squats, 8=Army Crawls)
      * @param blockheight Ethereum mainnet blockheight when the exercise was performed
+     * @param videoHash IPFS CIDv0 digest (32 bytes) of the exercise video
      */
-    function issueTony(address recipient, uint32 songId, uint256 blockheight) public onlyOwner {
+    function issueTony(address recipient, uint32 songId, uint256 blockheight, bytes32 videoHash) public onlyOwner {
         uint32 tokenId = _nextTokenId++;
         tokenIdToSongId[tokenId] = songId;
         tokenIdToBlockheight[tokenId] = blockheight;
+        tokenIdToVideoHash[tokenId] = videoHash;
         _safeMint(recipient, tokenId);
     }
 
