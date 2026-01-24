@@ -33,21 +33,19 @@ interface IBlueRailroadV1 is IERC721 {
  *      - Adds trustless migration from V1 via migrateFromV1()
  */
 contract BlueRailroadTrainV2 is ERC721, ERC721Enumerable, ERC721Burnable, Ownable {
+    /// @dev Enables tokenId.toString() for building metadata URIs (see tokenURI function)
     using Strings for uint256;
     uint32 private _nextTokenId;
 
     /// @notice Maps token ID to Manzanita track number (5, 7, or 8)
-    mapping(uint32 => uint32) public tokenIdToSongId;
+    /// @dev uint8 suffices since track numbers are small (max 255)
+    mapping(uint32 => uint8) public tokenIdToSongId;
 
     /// @notice Maps token ID to Ethereum mainnet blockheight when exercise was performed
     mapping(uint32 => uint256) public tokenIdToBlockheight;
 
     /// @notice Maps token ID to IPFS video content hash (CIDv0 digest, 32 bytes)
     mapping(uint32 => bytes32) public tokenIdToVideoHash;
-
-    /// @notice Tracks which V1 token IDs have been migrated (prevents double-migration)
-    /// @dev Only 5 V1 tokens exist (IDs 0-4), so uint32 is plenty
-    mapping(uint32 => bool) public v1TokenMigrated;
 
     string private _baseTokenURI;
 
@@ -78,14 +76,11 @@ contract BlueRailroadTrainV2 is ERC721, ERC721Enumerable, ERC721Burnable, Ownabl
      * @param blockheight Ethereum mainnet blockheight when the exercise was performed
      * @param videoHash IPFS CIDv0 digest (32 bytes) of the exercise video
      */
-    function migrateFromV1(uint32 v1TokenId, uint32 songId, uint256 blockheight, bytes32 videoHash) external {
-        require(!v1TokenMigrated[v1TokenId], "Token already migrated");
+    function migrateFromV1(uint32 v1TokenId, uint8 songId, uint256 blockheight, bytes32 videoHash) external {
         require(v1Contract.ownerOf(v1TokenId) == msg.sender, "Caller does not own V1 token");
 
-        // Mark as migrated before external call (reentrancy protection)
-        v1TokenMigrated[v1TokenId] = true;
-
         // Transfer V1 token to burn address (caller must have approved this contract)
+        // Once burned, the token can't be migrated again since ownerOf will return 0xdead
         v1Contract.transferFrom(msg.sender, BURN_ADDRESS, v1TokenId);
 
         // Mint V2 token with same ID as V1 token
@@ -109,7 +104,7 @@ contract BlueRailroadTrainV2 is ERC721, ERC721Enumerable, ERC721Burnable, Ownabl
      * @param blockheight Ethereum mainnet blockheight when the exercise was performed
      * @param videoHash IPFS CIDv0 digest (32 bytes) of the exercise video
      */
-    function issueTony(address recipient, uint32 songId, uint256 blockheight, bytes32 videoHash) public onlyOwner {
+    function issueTony(address recipient, uint8 songId, uint256 blockheight, bytes32 videoHash) public onlyOwner {
         uint32 tokenId = _nextTokenId++;
         tokenIdToSongId[tokenId] = songId;
         tokenIdToBlockheight[tokenId] = blockheight;

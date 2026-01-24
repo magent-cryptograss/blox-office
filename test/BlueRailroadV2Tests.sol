@@ -30,9 +30,9 @@ contract BlueRailroadV2Tests is Test {
     address bob;
 
     // Manzanita track numbers
-    uint32 constant PUSHUPS = 5;      // Nine Pound Hammer
-    uint32 constant SQUATS = 7;       // Blue Railroad Train
-    uint32 constant ARMY_CRAWLS = 8;  // Ginseng Sullivan
+    uint8 constant PUSHUPS = 5;      // Nine Pound Hammer
+    uint8 constant SQUATS = 7;       // Blue Railroad Train
+    uint8 constant ARMY_CRAWLS = 8;  // Ginseng Sullivan
 
     // Sample blockheights (Ethereum mainnet)
     uint256 constant BLOCK_JAN_2024 = 19000000;
@@ -190,9 +190,6 @@ contract BlueRailroadV2Tests is Test {
         assertEq(blueRailroad.tokenIdToSongId(0), SQUATS);
         assertEq(blueRailroad.tokenIdToBlockheight(0), BLOCK_JAN_2024);
         assertEq(blueRailroad.tokenIdToVideoHash(0), VIDEO_HASH_1);
-
-        // Migration should be marked
-        assertTrue(blueRailroad.v1TokenMigrated(0));
     }
 
     function test_migrate_from_v1_not_owner_reverts() public {
@@ -215,13 +212,9 @@ contract BlueRailroadV2Tests is Test {
         blueRailroad.migrateFromV1(0, SQUATS, BLOCK_JAN_2024, VIDEO_HASH_1);
         vm.stopPrank();
 
-        // Now mint another V1 token with same ID to bob (simulating burn address transfer back - impossible in reality)
-        // Instead, test that the mapping blocks re-migration even if someone got the token
-        // The v1TokenMigrated mapping should prevent this
-
-        // Try to migrate again (would fail anyway since token is at burn address, but mapping catches it first)
+        // Try to migrate again - fails because V1 token is now owned by burn address, not alice
         vm.prank(alice);
-        vm.expectRevert("Token already migrated");
+        vm.expectRevert("Caller does not own V1 token");
         blueRailroad.migrateFromV1(0, SQUATS, BLOCK_JAN_2024, VIDEO_HASH_1);
     }
 
@@ -294,7 +287,6 @@ contract BlueRailroadV2Tests is Test {
 
         // V2 token should have same ID as V1 token
         assertEq(blueRailroad.ownerOf(4), alice);
-        assertTrue(blueRailroad.v1TokenMigrated(4));
 
         // Next new mint should be ID 5
         blueRailroad.issueTony(bob, PUSHUPS, BLOCK_JAN_2026, VIDEO_HASH_2);
