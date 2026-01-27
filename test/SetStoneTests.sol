@@ -60,116 +60,72 @@ contract SetStoneTests is Test {
     function test_mint_stones() public {
         uint16 artistId = 0;
         uint64 blockHeight = 420;
-        uint8 order = 0;
 
         vm.deal(address(this), 10 ether);
 
         // mint 2 stones for the same set
         stone_contract.mintStone{value: 0.5 ether}(
-            address(this),
-            artistId,
-            blockHeight,
-            order,
-            0, // color1
-            1, // color2
-            2, // color3
-            "crystalized", // crystalization text
-            0, // favorite song
-            "rabbit1" // rabbit secret
+            address(this), artistId, blockHeight, 0,
+            0, 1, 2, "crystalized", 0, "rabbit1"
         );
 
         stone_contract.mintStone{value: 1 ether}(
-            address(this),
-            artistId,
-            blockHeight,
-            order,
-            4, // color1
-            5, // color2
-            6, // color3
-            "crystalized stone 2",
-            1, // favorite song
-            "rabbit2"
+            address(this), artistId, blockHeight, 0,
+            4, 5, 6, "crystalized stone 2", 1, "rabbit2"
         );
 
-        // check that the stone has been minted
-        // check that the balance of the address is 1.5 ether
         assertEq(address(stone_contract).balance, 1.5 ether);
 
-
-        // check that the stone has the correct attributes
-        uint256[] memory stoneIds = stone_contract.getStonesBySetId(
-            artistId,
-            blockHeight,
-            order
-        );
-
+        uint256[] memory stoneIds = stone_contract.getStonesBySetId(artistId, blockHeight, 0);
         assertEq(stoneIds.length, 2);
-        SetStone.StoneColor memory stone1_color = stone_contract.getStoneColor(stoneIds[0]);
-        string memory stone1_crystalization = stone_contract.getCrystalizationMsg(stoneIds[0]);
-        uint256 stone1_paidAmountWei = stone_contract.getPaidAmountWei(stoneIds[0]);
-        uint8 stone1_favoriteSong = stone_contract.getFavoriteSong(stoneIds[0]);
 
-        assertEq(stone1_color.color1, 0);
-        assertEq(stone1_color.color2, 1);
-        assertEq(stone1_color.color3, 2);
-        assertEq(stone1_crystalization, "crystalized");
-        assertEq(stone1_paidAmountWei, 0.5 ether);
-        assertEq(stone1_favoriteSong, 0);
+        // Verify stone 1 attributes in isolated scope
+        {
+            SetStone.StoneColor memory color = stone_contract.getStoneColor(stoneIds[0]);
+            assertEq(color.color1, 0);
+            assertEq(color.color2, 1);
+            assertEq(color.color3, 2);
+            assertEq(stone_contract.getCrystalizationMsg(stoneIds[0]), "crystalized");
+            assertEq(stone_contract.getPaidAmountWei(stoneIds[0]), 0.5 ether);
+            assertEq(stone_contract.getFavoriteSong(stoneIds[0]), 0);
+        }
 
-        SetStone.StoneColor memory stone2_color = stone_contract.getStoneColor(stoneIds[1]);
-        string memory stone2_crystalization = stone_contract.getCrystalizationMsg(stoneIds[1]);
-        uint256 stone2_paidAmountWei = stone_contract.getPaidAmountWei(stoneIds[1]);
-        uint8 stone2_favoriteSong = stone_contract.getFavoriteSong(stoneIds[1]);
-
-        assertEq(stone2_color.color1, 4);
-        assertEq(stone2_color.color2, 5);
-        assertEq(stone2_color.color3, 6);
-        assertEq(stone2_crystalization, "crystalized stone 2");
-        assertEq(stone2_paidAmountWei, 1 ether);
-        assertEq(stone2_favoriteSong, 1);
-
+        // Verify stone 2 attributes in isolated scope
+        {
+            SetStone.StoneColor memory color = stone_contract.getStoneColor(stoneIds[1]);
+            assertEq(color.color1, 4);
+            assertEq(color.color2, 5);
+            assertEq(color.color3, 6);
+            assertEq(stone_contract.getCrystalizationMsg(stoneIds[1]), "crystalized stone 2");
+            assertEq(stone_contract.getPaidAmountWei(stoneIds[1]), 1 ether);
+            assertEq(stone_contract.getFavoriteSong(stoneIds[1]), 1);
+        }
 
         // check that the NFT has been properly minted
         assertEq(stone_contract.ownerOf(0), address(this));
         assertEq(stone_contract.ownerOf(1), address(this));
-
         assertEq(stone_contract.balanceOf(address(this)), 2);
         assertEq(stone_contract.tokenOfOwnerByIndex(address(this), 0), 0);
         assertEq(stone_contract.tokenOfOwnerByIndex(address(this), 1), 1);
 
         // check that Stone with non-existing tokenId is an uninitialized Stone struct
-        SetStone.StoneColor memory non_existent_stone = stone_contract.getStoneColor(1234);
-        assertEq(non_existent_stone.color1, 0);
-        assertEq(non_existent_stone.color2, 0);
-        assertEq(non_existent_stone.color3, 0);
-
+        {
+            SetStone.StoneColor memory color = stone_contract.getStoneColor(1234);
+            assertEq(color.color1, 0);
+            assertEq(color.color2, 0);
+            assertEq(color.color3, 0);
+        }
 
         // mint one more stone for the second set
         stone_contract.mintStone{value: 1 ether}(
-            address(this),
-            artistId,
-            blockHeight,
-            1, // order
-            7, // color1
-            8, // color2
-            9, // color3
-            "crystalized", // crystalization text
-            2, // favorite song
-            "rabbit3" // rabbit secret
+            address(this), artistId, blockHeight, 1,
+            7, 8, 9, "crystalized", 2, "rabbit3"
         );
 
         // mint stone for the second show
         stone_contract.mintStone{value: 1 ether}(
-            address(this),
-            artistId,
-            blockHeight + 1,
-            0, // order
-            7, // color1
-            7, // color2
-            7, // color3
-            "crystalized", // crystalization text
-            3, // favorite song
-            "rabbit5" // rabbit secret
+            address(this), artistId, blockHeight + 1, 0,
+            7, 7, 7, "crystalized", 3, "rabbit5"
         );
 
         assertEq(stone_contract.numberOfStonesMinted(), 4);
