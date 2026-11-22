@@ -15,7 +15,8 @@ import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 //      and what one share costs.
 //   2. Anyone can buy shares. A share does not exist until somebody gets it.
 //   3. The money is split on the spot between the picker and the band. It
-//      waits in this contract until each of them collects it.
+//      waits in this contract until each of them collects it. A picker with
+//      no wallet on file yet loses nothing: their cut is held until they do.
 //   4. Your shares are yours. You can keep them, give them away, or sell them
 //      anywhere, without asking the band.
 //   5. Whoever gathers every share of a chartifact holds the whole thing.
@@ -40,7 +41,8 @@ contract Chartifacts is ERC1155 {
         uint256 shares;       // how many shares it is split into. Never changes.
         uint256 spokenFor;    // how many of those are bought, given, or set aside
         uint256 price;        // what one share costs from the band, in wei
-        address pickerWallet; // where the picker's cut goes. Zero until they have one.
+        address pickerWallet; // where the picker's cut goes. Zero until they have one;
+                              // until then their cut is held (see heldForPicker).
         uint256 pickerPercent; // the picker's cut of each sale, 0 to 100
         bytes32 paperSeal;    // for a chartifact with a paper chart: the hash of the
                               // secret written on the paper. Zero means no paper.
@@ -54,6 +56,11 @@ contract Chartifacts is ERC1155 {
 
     // Money waiting to be collected, by address.
     mapping(address => uint256) public owed;
+
+    // The picker's cut of sales made before their wallet was on file, by
+    // chartifact id. It waits here. Nobody can collect it, the band included,
+    // until a wallet is recorded for that chartifact.
+    mapping(uint256 => uint256) public heldForPicker;
 
     // Shares held for somebody who has no wallet yet. They hold a secret code;
     // the contract holds only the code's hash. See setAside and claim.
@@ -126,10 +133,15 @@ contract Chartifacts is ERC1155 {
         emit PriceChanged(id, price);
     }
 
-    // The band records a picker's wallet here. The picker's cut of every sale
-    // from then on goes to it. Until then, the whole price goes to the band.
+    // The band records a picker's wallet here. Whatever was held for the
+    // picker becomes theirs to collect, and their cut of every sale from then
+    // on goes straight to the wallet.
     function setPickerWallet(uint256 id, address pickerWallet) external onlyBand mustExist(id) {
         chartifacts[id].pickerWallet = pickerWallet;
+        if (pickerWallet != address(0)) {
+            owed[pickerWallet] += heldForPicker[id];
+            heldForPicker[id] = 0;
+        }
     }
 
     // ---------------------------------------------------------------
@@ -143,9 +155,10 @@ contract Chartifacts is ERC1155 {
         require(msg.value == c.price * shares, "send exactly the price");
         _speakFor(c, shares);
 
-        uint256 pickersCut = 0;
-        if (c.pickerWallet != address(0)) {
-            pickersCut = (msg.value * c.pickerPercent) / 100;
+        uint256 pickersCut = (msg.value * c.pickerPercent) / 100;
+        if (c.pickerWallet == address(0)) {
+            heldForPicker[id] += pickersCut;
+        } else {
             owed[c.pickerWallet] += pickersCut;
         }
         owed[band] += msg.value - pickersCut;

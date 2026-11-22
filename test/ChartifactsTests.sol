@@ -124,25 +124,97 @@ contract ChartifactsTests is Test {
         assertEq(address(chartifacts).balance, 3 * PRICE);
     }
 
-    function testWithNoPickerWalletItAllWaitsForTheBand() public {
+    // Kyle has no wallet on file. His 40% is held under his chartifact: it is
+    // not the band's, and it is not lost to the zero address.
+    function testWithNoPickerWalletThePickersCutIsHeld() public {
         vm.prank(fan);
         chartifacts.buy{value: 2 * PRICE}(kyles, 2);
-        assertEq(chartifacts.owed(band), 2 * PRICE);
+
+        uint256 kylesCut = (2 * PRICE * 40) / 100;
+        assertEq(chartifacts.heldForPicker(kyles), kylesCut);
+        assertEq(chartifacts.owed(band), 2 * PRICE - kylesCut);
         assertEq(chartifacts.owed(address(0)), 0);
+        assertEq(chartifacts.heldForPicker(harrys), 0);
+        assertEq(address(chartifacts).balance, 2 * PRICE);
     }
 
-    function testAPickerWalletRecordedLaterGetsLaterSales() public {
+    function testTheBandCannotCollectWhatIsHeld() public {
+        vm.prank(fan);
+        chartifacts.buy{value: 2 * PRICE}(kyles, 2);
+        uint256 kylesCut = (2 * PRICE * 40) / 100;
+
+        vm.prank(band);
+        chartifacts.collect();
+        assertEq(band.balance, 2 * PRICE - kylesCut);
+        assertEq(address(chartifacts).balance, kylesCut);
+        assertEq(chartifacts.heldForPicker(kyles), kylesCut);
+
+        vm.prank(band);
+        vm.expectRevert("nothing is owed to you");
+        chartifacts.collect();
+    }
+
+    function testAWalletRecordedLaterGetsWhatWasHeldAndLaterSales() public {
         vm.prank(fan);
         chartifacts.buy{value: PRICE}(kyles, 1);
+        uint256 cut = (PRICE * 40) / 100;
+        assertEq(chartifacts.heldForPicker(kyles), cut);
 
         vm.prank(band);
         chartifacts.setPickerWallet(kyles, kyle);
+        assertEq(chartifacts.heldForPicker(kyles), 0);
+        assertEq(chartifacts.owed(kyle), cut);
 
         vm.prank(fan);
         chartifacts.buy{value: PRICE}(kyles, 1);
+        assertEq(chartifacts.heldForPicker(kyles), 0);
+        assertEq(chartifacts.owed(kyle), 2 * cut);
+        assertEq(chartifacts.owed(band), 2 * PRICE - 2 * cut);
 
-        assertEq(chartifacts.owed(kyle), (PRICE * 40) / 100);
-        assertEq(chartifacts.owed(band), PRICE + PRICE - (PRICE * 40) / 100);
+        vm.prank(kyle);
+        chartifacts.collect();
+        assertEq(kyle.balance, 2 * cut);
+    }
+
+    // Taking a wallet off file sends nothing to the zero address. What was
+    // owed to the old wallet stays owed to it; later cuts are held again.
+    function testTakingAWalletOffFileHoldsLaterCuts() public {
+        vm.prank(fan);
+        chartifacts.buy{value: PRICE}(harrys, 1);
+        uint256 cut = (PRICE * 40) / 100;
+
+        vm.prank(band);
+        chartifacts.setPickerWallet(harrys, address(0));
+        vm.prank(fan);
+        chartifacts.buy{value: PRICE}(harrys, 1);
+
+        assertEq(chartifacts.owed(harry), cut);
+        assertEq(chartifacts.heldForPicker(harrys), cut);
+        assertEq(chartifacts.owed(address(0)), 0);
+
+        // Off file twice over changes nothing.
+        vm.prank(band);
+        chartifacts.setPickerWallet(harrys, address(0));
+        assertEq(chartifacts.heldForPicker(harrys), cut);
+
+        // A new wallet gets what was held, and the old one keeps its own.
+        vm.prank(band);
+        chartifacts.setPickerWallet(harrys, otherFan);
+        assertEq(chartifacts.owed(otherFan), cut);
+        assertEq(chartifacts.owed(harry), cut);
+        assertEq(chartifacts.heldForPicker(harrys), 0);
+    }
+
+    // One picker's held money never leaves by another chartifact's wallet.
+    function testWhatIsHeldStaysWithItsOwnChartifact() public {
+        vm.prank(fan);
+        chartifacts.buy{value: PRICE}(kyles, 1);
+        uint256 cut = (PRICE * 40) / 100;
+
+        vm.prank(band);
+        chartifacts.setPickerWallet(harrys, stranger);
+        assertEq(chartifacts.owed(stranger), 0);
+        assertEq(chartifacts.heldForPicker(kyles), cut);
     }
 
     function testOnlyTheBandRecordsAPickerWallet() public {
@@ -423,13 +495,21 @@ contract ChartifactsTests is Test {
         vm.expectRevert("only the band can do this");
         chartifacts.setPrice(harrys, 1);
 
-        // What the old address earned is still its to collect.
+        // What the old address earned is still its to collect: the band's
+        // side of the sale, and not what is held for Kyle.
+        uint256 kylesCut = (PRICE * 40) / 100;
         vm.prank(band);
         chartifacts.collect();
-        assertEq(band.balance, PRICE);
+        assertEq(band.balance, PRICE - kylesCut);
 
         vm.prank(otherFan);
         chartifacts.setPrice(harrys, 1);
+
+        // What is held for Kyle outlives the hand-over: the new band records
+        // his wallet, and it is his.
+        vm.prank(otherFan);
+        chartifacts.setPickerWallet(kyles, kyle);
+        assertEq(chartifacts.owed(kyle), kylesCut);
     }
 
     function testHandOverNeedsAnAddressAndTheBand() public {
@@ -452,7 +532,7 @@ contract ChartifactsTests is Test {
 
     // ---- the books always balance ----
 
-    function testFuzzTheBooksBalance(uint8 a, uint8 b, uint8 percent, uint64 price) public {
+    function testFuzzTheBooksBalance(uint8 a, uint8 b, uint8 percent, uint64 price, bool walletFirst, bool walletEver) public {
         uint256 pct = bound(percent, 0, 100);
         uint256 p = bound(price, 0, 10 ether);
         uint256 first = bound(a, 1, 60);
@@ -460,12 +540,20 @@ contract ChartifactsTests is Test {
 
         vm.prank(band);
         uint256 id = chartifacts.list("Paint Exchange", "Harry Clark", "cut", "", 100, p, pct, bytes32(0));
-        vm.prank(band);
-        chartifacts.setPickerWallet(id, harry);
+        if (walletFirst) {
+            vm.prank(band);
+            chartifacts.setPickerWallet(id, harry);
+        }
 
         vm.deal(fan, first * p);
         vm.prank(fan);
         chartifacts.buy{value: first * p}(id, first);
+
+        // The wallet may come between the two sales, or never.
+        if (!walletFirst && walletEver) {
+            vm.prank(band);
+            chartifacts.setPickerWallet(id, harry);
+        }
 
         vm.deal(otherFan, second * p);
         vm.prank(otherFan);
@@ -478,7 +566,13 @@ contract ChartifactsTests is Test {
         }
 
         uint256 paid = (first + second) * p;
-        assertEq(chartifacts.owed(harry) + chartifacts.owed(band), paid);
+        // Every wei paid is owed to the picker, owed to the band, or held for
+        // the picker. And the picker's side is the percent of each sale.
+        uint256 pickersSide = (first * p * pct) / 100 + (second * p * pct) / 100;
+        assertEq(chartifacts.owed(harry) + chartifacts.heldForPicker(id), pickersSide);
+        assertEq(chartifacts.owed(harry) + chartifacts.owed(band) + chartifacts.heldForPicker(id), paid);
+        if (walletFirst || walletEver) assertEq(chartifacts.heldForPicker(id), 0);
+        else assertEq(chartifacts.owed(harry), 0);
         assertEq(address(chartifacts).balance, paid);
         assertEq(chartifacts.balanceOf(fan, id) + chartifacts.balanceOf(otherFan, id), first + second);
         assertEq(chartifacts.sharesLeft(id), 100 - first - second);
