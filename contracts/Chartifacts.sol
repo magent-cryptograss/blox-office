@@ -34,7 +34,9 @@ contract Chartifacts is ERC1155 {
         string song;          // "August"
         string picker;        // "Harry Clark", as their page on PickiPedia is titled
         string cut;           // which recording: its Release id on PickiPedia
-        string part;          // empty for the picker's whole chart; else "third A part"
+        string part;          // empty for the picker's whole chart; else "third A part",
+                              // in the words the song's page on PickiPedia uses for
+                              // it (there the field is called "section")
         uint256 shares;       // how many shares it is split into. Never changes.
         uint256 spokenFor;    // how many of those are bought, given, or set aside
         uint256 price;        // what one share costs from the band, in wei
@@ -69,6 +71,13 @@ contract Chartifacts is ERC1155 {
 
     modifier onlyBand() {
         require(msg.sender == band, "only the band can do this");
+        _;
+    }
+
+    // A chartifact's id is its number in the list. Ask for a number that was
+    // never listed and you get a sentence back.
+    modifier mustExist(uint256 id) {
+        require(id < chartifacts.length, "no chartifact by that number");
         _;
     }
 
@@ -112,14 +121,14 @@ contract Chartifacts is ERC1155 {
     }
 
     // The price of the shares nobody has yet. Shares already held are not touched.
-    function setPrice(uint256 id, uint256 price) external onlyBand {
+    function setPrice(uint256 id, uint256 price) external onlyBand mustExist(id) {
         chartifacts[id].price = price;
         emit PriceChanged(id, price);
     }
 
     // The band records a picker's wallet here. The picker's cut of every sale
     // from then on goes to it. Until then, the whole price goes to the band.
-    function setPickerWallet(uint256 id, address pickerWallet) external onlyBand {
+    function setPickerWallet(uint256 id, address pickerWallet) external onlyBand mustExist(id) {
         chartifacts[id].pickerWallet = pickerWallet;
     }
 
@@ -129,7 +138,7 @@ contract Chartifacts is ERC1155 {
 
     // Buy shares with ether. Send exactly the price; the shares are yours in
     // the same transaction.
-    function buy(uint256 id, uint256 shares) external payable {
+    function buy(uint256 id, uint256 shares) external payable mustExist(id) {
         Chartifact storage c = chartifacts[id];
         require(msg.value == c.price * shares, "send exactly the price");
         _speakFor(c, shares);
@@ -147,7 +156,7 @@ contract Chartifacts is ERC1155 {
 
     // The band hands shares straight to somebody: a person who paid in
     // dollars, or a picker getting a piece of their own chart.
-    function give(uint256 id, address to, uint256 shares) external onlyBand {
+    function give(uint256 id, address to, uint256 shares) external onlyBand mustExist(id) {
         _speakFor(chartifacts[id], shares);
         _mint(to, id, shares, "");
     }
@@ -155,7 +164,7 @@ contract Chartifacts is ERC1155 {
     // For somebody with no wallet yet. The band makes up a secret code, gives
     // the code to that person, and records only its hash here. The shares
     // wait, and nobody else can buy them.
-    function setAside(uint256 id, uint256 shares, bytes32 codeHash) external onlyBand {
+    function setAside(uint256 id, uint256 shares, bytes32 codeHash) external onlyBand mustExist(id) {
         require(shares > 0, "set aside at least one share");
         require(aside[codeHash].shares == 0, "that code is already in use");
         _speakFor(chartifacts[id], shares);
@@ -201,13 +210,13 @@ contract Chartifacts is ERC1155 {
         return chartifacts.length;
     }
 
-    function sharesLeft(uint256 id) external view returns (uint256) {
+    function sharesLeft(uint256 id) external view mustExist(id) returns (uint256) {
         return chartifacts[id].shares - chartifacts[id].spokenFor;
     }
 
     // True when one address holds every share. For a chartifact with paper,
     // this is who the paper belongs to.
-    function holdsAll(address who, uint256 id) external view returns (bool) {
+    function holdsAll(address who, uint256 id) external view mustExist(id) returns (bool) {
         return balanceOf(who, id) == chartifacts[id].shares;
     }
 

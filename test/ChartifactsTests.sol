@@ -181,8 +181,39 @@ contract ChartifactsTests is Test {
 
     function testBuyingAChartifactThatIsNotThereFails() public {
         vm.prank(fan);
-        vm.expectRevert();
+        vm.expectRevert("no chartifact by that number");
         chartifacts.buy{value: PRICE}(99, 1);
+
+        // The first number never listed is refused too: two are listed, 0 and 1.
+        assertEq(chartifacts.count(), 2);
+        vm.prank(fan);
+        vm.expectRevert("no chartifact by that number");
+        chartifacts.buy{value: PRICE}(2, 1);
+    }
+
+    // re, #merch, 22 Nov 2026: a wrong number used to come back as an array
+    // panic in hexadecimal. Everything that takes a number says so in words.
+    function testEveryAskForAChartifactThatIsNotThereSaysSo() public {
+        vm.startPrank(band);
+        vm.expectRevert("no chartifact by that number");
+        chartifacts.setPrice(2, PRICE);
+        vm.expectRevert("no chartifact by that number");
+        chartifacts.setPickerWallet(2, harry);
+        vm.expectRevert("no chartifact by that number");
+        chartifacts.give(2, fan, 1);
+        vm.expectRevert("no chartifact by that number");
+        chartifacts.setAside(2, 1, keccak256("goys-teeth-4417"));
+        vm.stopPrank();
+
+        vm.expectRevert("no chartifact by that number");
+        chartifacts.sharesLeft(2);
+        vm.expectRevert("no chartifact by that number");
+        chartifacts.holdsAll(fan, 2);
+
+        // And a stranger asking for one learns only that they are not the band.
+        vm.prank(stranger);
+        vm.expectRevert("only the band can do this");
+        chartifacts.setPrice(2, PRICE);
     }
 
     function testHoldingAll() public {
