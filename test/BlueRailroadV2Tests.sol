@@ -43,6 +43,12 @@ contract BlueRailroadV2Tests is Test {
     bytes32 constant VIDEO_HASH_2 = keccak256("video2");
     bytes32 constant VIDEO_HASH_3 = keccak256("video3");
 
+    // The contract keeps ids 0 to 4 for tokens coming over from V1 (its
+    // constructor sets _nextTokenId to 5; Justin, ef978aa, 3 Feb 2026), so the
+    // first token issueTony makes is number 5. The one on Optimism does the
+    // same: its first new token is 5.
+    uint256 constant FIRST_NEW = 5;
+
     function setUp() public {
         owner = address(this);
         alice = makeAddr("alice");
@@ -60,10 +66,10 @@ contract BlueRailroadV2Tests is Test {
     function test_mint_token_with_correct_metadata() public {
         blueRailroad.issueTony(alice, SQUATS, BLOCK_JAN_2026, VIDEO_HASH_1);
 
-        assertEq(blueRailroad.ownerOf(0), alice);
-        assertEq(blueRailroad.tokenIdToSongId(0), SQUATS);
-        assertEq(blueRailroad.tokenIdToBlockheight(0), BLOCK_JAN_2026);
-        assertEq(blueRailroad.tokenIdToVideoHash(0), VIDEO_HASH_1);
+        assertEq(blueRailroad.ownerOf(FIRST_NEW), alice);
+        assertEq(blueRailroad.tokenIdToSongId(uint32(FIRST_NEW)), SQUATS);
+        assertEq(blueRailroad.tokenIdToBlockheight(uint32(FIRST_NEW)), BLOCK_JAN_2026);
+        assertEq(blueRailroad.tokenIdToVideoHash(uint32(FIRST_NEW)), VIDEO_HASH_1);
         assertEq(blueRailroad.totalSupply(), 1);
     }
 
@@ -73,13 +79,24 @@ contract BlueRailroadV2Tests is Test {
         blueRailroad.issueTony(alice, ARMY_CRAWLS, BLOCK_JAN_2026, VIDEO_HASH_3);
 
         assertEq(blueRailroad.totalSupply(), 3);
-        assertEq(blueRailroad.ownerOf(0), alice);
-        assertEq(blueRailroad.ownerOf(1), bob);
-        assertEq(blueRailroad.ownerOf(2), alice);
+        assertEq(blueRailroad.ownerOf(FIRST_NEW), alice);
+        assertEq(blueRailroad.ownerOf(FIRST_NEW + 1), bob);
+        assertEq(blueRailroad.ownerOf(FIRST_NEW + 2), alice);
 
-        assertEq(blueRailroad.tokenIdToSongId(0), SQUATS);
-        assertEq(blueRailroad.tokenIdToSongId(1), PUSHUPS);
-        assertEq(blueRailroad.tokenIdToSongId(2), ARMY_CRAWLS);
+        assertEq(blueRailroad.tokenIdToSongId(uint32(FIRST_NEW)), SQUATS);
+        assertEq(blueRailroad.tokenIdToSongId(uint32(FIRST_NEW + 1)), PUSHUPS);
+        assertEq(blueRailroad.tokenIdToSongId(uint32(FIRST_NEW + 2)), ARMY_CRAWLS);
+    }
+
+    // Nothing issueTony makes lands in the numbers kept for V1.
+    function test_new_tokens_stay_out_of_the_v1_numbers() public {
+        blueRailroad.issueTony(alice, SQUATS, BLOCK_JAN_2026, VIDEO_HASH_1);
+
+        for (uint256 id = 0; id < FIRST_NEW; id++) {
+            vm.expectRevert(abi.encodeWithSignature("ERC721NonexistentToken(uint256)", id));
+            blueRailroad.ownerOf(id);
+        }
+        assertEq(blueRailroad.tokenByIndex(0), FIRST_NEW);
     }
 
     function test_only_owner_can_mint() public {
@@ -94,13 +111,13 @@ contract BlueRailroadV2Tests is Test {
         blueRailroad.issueTony(alice, SQUATS, BLOCK_JAN_2026, VIDEO_HASH_1);
 
         // Initially no base URI, tokenURI is just the ID
-        assertEq(blueRailroad.tokenURI(0), "0");
+        assertEq(blueRailroad.tokenURI(FIRST_NEW), "5");
 
         // Set base URI
         blueRailroad.setBaseURI("https://cryptograss.live/meta/bluerailroad/");
 
         // Now token URI includes base
-        assertEq(blueRailroad.tokenURI(0), "https://cryptograss.live/meta/bluerailroad/0");
+        assertEq(blueRailroad.tokenURI(FIRST_NEW), "https://cryptograss.live/meta/bluerailroad/5");
     }
 
     function test_non_owner_cannot_set_base_uri() public {
@@ -115,9 +132,9 @@ contract BlueRailroadV2Tests is Test {
         blueRailroad.issueTony(alice, SQUATS, BLOCK_JAN_2026, VIDEO_HASH_1);
 
         vm.prank(alice);
-        blueRailroad.transferFrom(alice, bob, 0);
+        blueRailroad.transferFrom(alice, bob, FIRST_NEW);
 
-        assertEq(blueRailroad.ownerOf(0), bob);
+        assertEq(blueRailroad.ownerOf(FIRST_NEW), bob);
     }
 
     function test_token_holder_can_burn() public {
@@ -126,7 +143,7 @@ contract BlueRailroadV2Tests is Test {
         assertEq(blueRailroad.totalSupply(), 1);
 
         vm.prank(alice);
-        blueRailroad.burn(0);
+        blueRailroad.burn(FIRST_NEW);
 
         assertEq(blueRailroad.totalSupply(), 0);
     }
@@ -139,13 +156,13 @@ contract BlueRailroadV2Tests is Test {
         assertEq(blueRailroad.balanceOf(alice), 2);
         assertEq(blueRailroad.balanceOf(bob), 1);
 
-        assertEq(blueRailroad.tokenOfOwnerByIndex(alice, 0), 0);
-        assertEq(blueRailroad.tokenOfOwnerByIndex(alice, 1), 1);
-        assertEq(blueRailroad.tokenOfOwnerByIndex(bob, 0), 2);
+        assertEq(blueRailroad.tokenOfOwnerByIndex(alice, 0), FIRST_NEW);
+        assertEq(blueRailroad.tokenOfOwnerByIndex(alice, 1), FIRST_NEW + 1);
+        assertEq(blueRailroad.tokenOfOwnerByIndex(bob, 0), FIRST_NEW + 2);
 
-        assertEq(blueRailroad.tokenByIndex(0), 0);
-        assertEq(blueRailroad.tokenByIndex(1), 1);
-        assertEq(blueRailroad.tokenByIndex(2), 2);
+        assertEq(blueRailroad.tokenByIndex(0), FIRST_NEW);
+        assertEq(blueRailroad.tokenByIndex(1), FIRST_NEW + 1);
+        assertEq(blueRailroad.tokenByIndex(2), FIRST_NEW + 2);
     }
 
     // ============ Interface Support Tests ============
@@ -266,14 +283,36 @@ contract BlueRailroadV2Tests is Test {
         vm.prank(bob);
         blueRailroad.migrateFromV1(2, SQUATS, BLOCK_JAN_2024, VIDEO_HASH_2);
 
-        // Now mint a new token - should get ID 3 (after highest migrated ID)
+        // Now mint a new token - it gets 5, past every number kept for V1,
+        // and not 3: V1's 3 and 4 may still come over.
         blueRailroad.issueTony(alice, ARMY_CRAWLS, BLOCK_JAN_2026, VIDEO_HASH_3);
 
-        // Verify token IDs: 0 (migrated), 2 (migrated), 3 (new)
+        // Verify token IDs: 0 (migrated), 2 (migrated), 5 (new)
         assertEq(blueRailroad.ownerOf(0), alice);
         assertEq(blueRailroad.ownerOf(2), bob);
-        assertEq(blueRailroad.ownerOf(3), alice);
+        assertEq(blueRailroad.ownerOf(FIRST_NEW), alice);
         assertEq(blueRailroad.totalSupply(), 3);
+
+        // And V1's 3 still has its number waiting.
+        v1Contract.mint(bob, 3, PUSHUPS, 20240118);
+        vm.startPrank(bob);
+        v1Contract.approve(address(blueRailroad), 3);
+        blueRailroad.migrateFromV1(3, PUSHUPS, BLOCK_JAN_2024, VIDEO_HASH_3);
+        vm.stopPrank();
+        assertEq(blueRailroad.ownerOf(3), bob);
+    }
+
+    // A V1 token numbered past the kept five moves the next new number past it.
+    function test_a_high_v1_number_pushes_new_mints_past_it() public {
+        v1Contract.mint(alice, 9, PUSHUPS, 20240115);
+        vm.startPrank(alice);
+        v1Contract.approve(address(blueRailroad), 9);
+        blueRailroad.migrateFromV1(9, SQUATS, BLOCK_JAN_2024, VIDEO_HASH_1);
+        vm.stopPrank();
+
+        blueRailroad.issueTony(bob, PUSHUPS, BLOCK_JAN_2026, VIDEO_HASH_2);
+        assertEq(blueRailroad.ownerOf(9), alice);
+        assertEq(blueRailroad.ownerOf(10), bob);
     }
 
     function test_migration_preserves_token_id() public {
@@ -298,15 +337,15 @@ contract BlueRailroadV2Tests is Test {
         blueRailroad.issueTony(alice, SQUATS, BLOCK_JAN_2026, VIDEO_HASH_1);
         blueRailroad.issueTony(bob, PUSHUPS, BLOCK_JAN_2026, VIDEO_HASH_2);
 
-        assertEq(blueRailroad.tokenURI(0), "https://cryptograss.live/meta/bluerailroad/0");
-        assertEq(blueRailroad.tokenURI(1), "https://cryptograss.live/meta/bluerailroad/1");
+        assertEq(blueRailroad.tokenURI(FIRST_NEW), "https://cryptograss.live/meta/bluerailroad/5");
+        assertEq(blueRailroad.tokenURI(FIRST_NEW + 1), "https://cryptograss.live/meta/bluerailroad/6");
     }
 
     function test_video_hash_stored_correctly() public {
         blueRailroad.issueTony(alice, SQUATS, BLOCK_JAN_2026, VIDEO_HASH_1);
         blueRailroad.issueTony(bob, PUSHUPS, BLOCK_JAN_2024, VIDEO_HASH_2);
 
-        assertEq(blueRailroad.tokenIdToVideoHash(0), VIDEO_HASH_1);
-        assertEq(blueRailroad.tokenIdToVideoHash(1), VIDEO_HASH_2);
+        assertEq(blueRailroad.tokenIdToVideoHash(uint32(FIRST_NEW)), VIDEO_HASH_1);
+        assertEq(blueRailroad.tokenIdToVideoHash(uint32(FIRST_NEW + 1)), VIDEO_HASH_2);
     }
 }
